@@ -13,9 +13,26 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
+import com.example.myapplication.db.MaumDatabase
+import com.example.myapplication.db.SupportApplication
+import com.example.myapplication.db.SupportApplicationRepository
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.launch
 
 class RootSupportActivity : ComponentActivity() {
+
+    // Firestore 인스턴스
+    private val db: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
+    // 로컬 DB 저장용 리포지토리
+    private val supportRepository: SupportApplicationRepository by lazy {
+        SupportApplicationRepository(
+            MaumDatabase.getInstance(applicationContext).supportApplicationDao()
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,7 +93,7 @@ class RootSupportActivity : ComponentActivity() {
         }
         root.addView(formContainer)
 
-        // 공통 입력 필드 생성 함수 (onCreate 안의 로컬 함수)
+        // 공통 입력 필드 생성 함수
         fun makeField(
             hintText: String,
             multiline: Boolean = false,
@@ -89,7 +106,6 @@ class RootSupportActivity : ComponentActivity() {
                 setTextColor(titlePurple)
                 setPadding(dp(16), dp(12), dp(16), dp(12))
 
-                // 입력 가능 확실히
                 isEnabled = true
                 isFocusable = true
                 isFocusableInTouchMode = true
@@ -122,18 +138,18 @@ class RootSupportActivity : ComponentActivity() {
         }
 
         // 입력 항목들
-        val nameField = makeField("이름")
-        val birthField = makeField("생년월일")
+        val nameField = makeField("이름:김나라")
+        val birthField = makeField("생년월일:2000.12.09")
         val contactField = makeField(
-            "현재 연락처",
+            "현재 연락처:010-0000-0000",
             inputType = InputType.TYPE_CLASS_PHONE
         )
         val emailField = makeField(
-            "이메일",
+            "이메일-maum@naver.com",
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
         )
-        val adoptionTimeField = makeField("입양 시기(선택사항)")
-        val familyInfoField = makeField("찾고 싶은 가족 정보", multiline = true)
+        val adoptionTimeField = makeField("입양 시기:2025.11.27")
+        val familyInfoField = makeField("찾고 싶은 가족 정보:엄마", multiline = true)
 
         formContainer.addView(nameField)
         formContainer.addView(birthField)
@@ -161,7 +177,87 @@ class RootSupportActivity : ComponentActivity() {
             }
 
             setOnClickListener {
-                // TODO: 나중에 검증 & 서버/저장 로직 추가
+                // 1) 입력값 읽기 + trim
+                val name = nameField.text.toString().trim()
+                val birth = birthField.text.toString().trim()
+                val phone = contactField.text.toString().trim()
+                val email = emailField.text.toString().trim()
+                val adoptionDate = adoptionTimeField.text.toString().trim()
+                val familyInfo = familyInfoField.text.toString().trim()
+
+                // 2) 필수값 검사 (빈칸 있으면 제출 막기)
+                if (name.isEmpty() || birth.isEmpty() || phone.isEmpty() ||
+                    email.isEmpty() || adoptionDate.isEmpty() || familyInfo.isEmpty()
+                ) {
+                    Toast.makeText(
+                        this@RootSupportActivity,
+                        "필수 항목을 모두 입력해 주세요.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@setOnClickListener
+                }
+
+                isEnabled = false
+
+                // 3) RootRequest 객체 만들기
+                val request = RootRequest(
+                    name = name,
+                    birth = birth,
+                    phone = phone,
+                    email = email,
+                    adoptionDate = adoptionDate,
+                    familyInfo = familyInfo
+                )
+
+                val application = SupportApplication(
+                    name = name,
+                    birthDate = birth,
+                    contact = phone,
+                    email = email,
+                    adoptionTime = adoptionDate.ifBlank { null },
+                    familyInfo = familyInfo
+                )
+
+                lifecycleScope.launch {
+                    val localResult = supportRepository.submit(application)
+                    localResult.onFailure { err ->
+                        Toast.makeText(
+                            this@RootSupportActivity,
+                            "로컬 저장 실패: ${err.message ?: "알 수 없는 오류"}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+
+                    // 4) Firestore에 저장 + createdAt(서버 시간) 필드 추가
+                    db.collection("rootRequests")
+                        .add(request)
+                        .addOnSuccessListener { docRef ->
+                            docRef.update("createdAt", FieldValue.serverTimestamp())
+
+                            Toast.makeText(
+                                this@RootSupportActivity,
+                                "신청서가 정상적으로 제출되었어요.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+
+                            // 입력칸 비우기
+                            nameField.text.clear()
+                            birthField.text.clear()
+                            contactField.text.clear()
+                            emailField.text.clear()
+                            adoptionTimeField.text.clear()
+                            familyInfoField.text.clear()
+                            isEnabled = true
+                        }
+                        .addOnFailureListener { e ->
+                            Toast.makeText(
+                                this@RootSupportActivity,
+                                "제출 중 오류가 발생했어요: ${e.message}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            isEnabled = true
+                        }
+                }
             }
         }
         root.addView(submitBtn)

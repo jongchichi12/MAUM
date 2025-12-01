@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "945750213942",
+    "project_id": "maum-f4280",
+    "storage_bucket": "maum-f4280.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:945750213942:android:89b5c33d5e6315c94b1f97",
+        "android_client_info": {
+          "package_name": "com.example.myapplication"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD_hQuYU7ky91BS7HBDfaCwPMr_m16T9_Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -105,15 +105,6 @@ class RootActivity : ComponentActivity() {
             return container
         }
 
-        // 탭들 추가
-        tabRow.addView(makeTab("홈", false))
-        tabRow.addView(makeTab("동아리 활동", false))
-        tabRow.addView(makeTab("뿌리찾기", true))
-        tabRow.addView(makeTab("상담", false))
-
-        header.addView(tabRow)
-        root.addView(header)
-
         // 3. 안내 문구
         val description = TextView(this).apply {
             text = "친부모 찾기 프로그램 지원 및 \n행정적 연계를 도와드립니다."

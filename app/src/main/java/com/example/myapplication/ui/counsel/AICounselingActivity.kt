@@ -5,6 +5,8 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.InputType
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -13,9 +15,18 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import com.example.myapplication.BuildConfig
+import com.example.myapplication.data.llm.ChatRole
+import com.example.myapplication.data.llm.ProxyChatClient
+import com.example.myapplication.data.llm.ProxyChatStub
+import com.example.myapplication.ui.counsel.chat.AICounselingController
 
 class AICounselingActivity : ComponentActivity() {
+
+    private lateinit var controller: AICounselingController
+    private var isSending: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -145,6 +156,7 @@ class AICounselingActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
+            isEnabled = false // 입력이 있을 때만 활성화
         }
 
         inputRow.addView(inputField)
@@ -170,40 +182,73 @@ class AICounselingActivity : ComponentActivity() {
         }
         root.addView(backBtn)
 
-        // ───── 전송 버튼 동작 (나중에 GPT 연동할 부분) ─────
-        sendButton.setOnClickListener {
-            val text = inputField.text.toString().trim()
-            if (text.isNotEmpty()) {
-                // 1) 사용자의 말풍선 추가
-                messageContainer.addView(
-                    makeUserBubble(
-                        message = text,
-                        bubbleColor = mainPurple
-                    )
-                )
+        setContentView(scrollView)
 
-                inputField.setText("")
+        // ---- 프록시 기반 LLM 컨트롤러 연결 ----
+        val proxyBaseUrl = BuildConfig.PROXY_BASE_URL
+        val proxyApiKey = BuildConfig.PROXY_API_KEY.takeIf { it.isNotBlank() }
+        val primaryClient = if (proxyBaseUrl.isNotBlank()) {
+            ProxyChatClient(baseUrl = proxyBaseUrl, apiKey = proxyApiKey)
+        } else {
+            null
+        }
+        val fallbackClient = ProxyChatStub()
 
-                // 2) 지금은 임시로 간단한 AI 응답 넣어두기
-                //    → 나중에 여기서 GPT 호출해서 실제 응답 넣으면 됨
-                messageContainer.addView(
+        controller = AICounselingController(
+            primaryClient = primaryClient,
+            fallbackClient = fallbackClient
+        ).apply {
+            onNewMessage = { msg ->
+                val bubble = if (msg.role == ChatRole.USER) {
+                    makeUserBubble(message = msg.content, bubbleColor = mainPurple)
+                } else {
                     makeAIBubble(
                         iconBg = iconBg,
                         bubbleBg = bubbleBg,
                         textColor = subPurple,
-                        message = "들려줘서 고마워요.\n이 마음을 함께 정리해 볼까요?",
+                        message = msg.content,
                         timestamp = "방금 전"
                     )
-                )
-
-                // 3) 맨 아래로 스크롤
-                scrollView.post {
-                    scrollView.fullScroll(View.FOCUS_DOWN)
                 }
+                messageContainer.addView(bubble)
+                scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+                if (msg.role == ChatRole.ASSISTANT) {
+                    isSending = false
+                    sendButton.isEnabled = inputField.text.isNotBlank()
+                }
+            }
+            onError = { err ->
+                Toast.makeText(
+                    this@AICounselingActivity,
+                    "전송 실패: ${err.message ?: "알 수 없는 오류"}",
+                    Toast.LENGTH_SHORT
+                ).show()
+                isSending = false
+                sendButton.isEnabled = inputField.text.isNotBlank()
             }
         }
 
-        setContentView(scrollView)
+        // 입력 변화에 따라 전송 버튼 활성/비활성
+        inputField.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                if (!isSending) {
+                    sendButton.isEnabled = !s.isNullOrBlank()
+                }
+            }
+        })
+
+        // 전송 버튼 클릭 → GPT로 전송
+        sendButton.setOnClickListener {
+            val text = inputField.text.toString().trim()
+            if (text.isNotEmpty()) {
+                isSending = true
+                sendButton.isEnabled = false
+                controller.sendUserMessage(text)
+                inputField.setText("")
+            }
+        }
     }
 
     // ───── 말풍선 UI 만드는 함수들 ─────
