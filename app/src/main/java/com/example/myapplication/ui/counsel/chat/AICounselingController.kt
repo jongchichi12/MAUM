@@ -78,4 +78,9 @@ class AICounselingController(
                 }
         }
     }
+
+    fun seedHistory(messages: List<ChatMessage>) {
+        cache.clear()
+        cache.addAll(messages)
+    }
 }

@@ -18,10 +18,15 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import com.example.myapplication.BuildConfig
+import androidx.lifecycle.lifecycleScope
+import com.example.myapplication.data.llm.ChatMessage
 import com.example.myapplication.data.llm.ChatRole
 import com.example.myapplication.data.llm.ProxyChatClient
 import com.example.myapplication.data.llm.ProxyChatStub
+import com.example.myapplication.db.ChatMessageRepository
+import com.example.myapplication.db.MaumDatabase
 import com.example.myapplication.ui.counsel.chat.AICounselingController
+import kotlinx.coroutines.launch
 
 class AICounselingActivity : ComponentActivity() {
 
@@ -194,6 +199,10 @@ class AICounselingActivity : ComponentActivity() {
         }
         val fallbackClient = ProxyChatStub()
 
+        val chatRepo = ChatMessageRepository(
+            MaumDatabase.getInstance(applicationContext).chatMessageDao()
+        )
+
         controller = AICounselingController(
             primaryClient = primaryClient,
             fallbackClient = fallbackClient
@@ -215,6 +224,10 @@ class AICounselingActivity : ComponentActivity() {
                 if (msg.role == ChatRole.ASSISTANT) {
                     isSending = false
                     sendButton.isEnabled = inputField.text.isNotBlank()
+                }
+                // 저장
+                lifecycleScope.launch {
+                    chatRepo.add(role = msg.role.name, content = msg.content)
                 }
             }
             onError = { err ->
@@ -238,6 +251,32 @@ class AICounselingActivity : ComponentActivity() {
                 }
             }
         })
+
+        // 이전 대화 불러오기
+        lifecycleScope.launch {
+            val history = chatRepo.getAll().map {
+                ChatMessage(
+                    role = if (it.role.equals("assistant", ignoreCase = true)) ChatRole.ASSISTANT else ChatRole.USER,
+                    content = it.content
+                )
+            }
+            controller.seedHistory(history)
+            history.forEach { msg ->
+                val bubble = if (msg.role == ChatRole.USER) {
+                    makeUserBubble(message = msg.content, bubbleColor = mainPurple)
+                } else {
+                    makeAIBubble(
+                        iconBg = iconBg,
+                        bubbleBg = bubbleBg,
+                        textColor = subPurple,
+                        message = msg.content,
+                        timestamp = "이전 대화"
+                    )
+                }
+                messageContainer.addView(bubble)
+            }
+            scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+        }
 
         // 전송 버튼 클릭 → GPT로 전송
         sendButton.setOnClickListener {
